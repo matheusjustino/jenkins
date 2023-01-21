@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+    tools {
+        nodejs 'node18'
+    }
+    environment {
+        GIT_COMMIT = sh(returnStdout: true, script: 'git rev-parse HEAD').trim()
+    }
+    stages {
+        stage('Install') {
+            steps {
+                sh 'yarn install --frozen-lockfile'
+            }
+        }
+        stage('Test') {
+            steps {
+                sh 'yarn test --coverage'
+            }
+        }
+        stage('Format') {
+            steps {
+                sh 'yarn format'
+            }
+        }
+        stage('Lint') {
+            steps {
+                sh 'yarn lint'
+            }
+        }
+        stage('Build') {
+            steps {
+                sh 'yarn build'
+            }
+        }
+        stage('Sonarqube Scan') {
+            steps {
+                script {
+                    def scannerHome = tool 'sonarqubescanner4.8';
+                    withSonarQubeEnv("sonarqube") {
+                        sh "${scannerHome}/bin/sonar-scanner"
+                    }
+                }
+            }
+        }
+        stage("Sonarqube Quality Gate") {
+            steps {
+                timeout(time: 2, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
+                }
+            }
+        }
+        stage('Docker Build') {
+            steps {
+                sh "docker build -t matheusjustino/nestjs-with-jenkins:latest ."
+                sh "docker build -t matheusjustino/nestjs-with-jenkins:$GIT_COMMIT ."
+            }
+        }
+        stage('Docker Push') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'USERNAME', passwordVariable: 'PASSWORD')]) {
+                    sh 'echo $PASSWORD | docker login --username $USERNAME --password-stdin'
+                    sh "docker push matheusjustino/nestjs-with-jenkins:latest"
+                    sh "docker push matheusjustino/nestjs-with-jenkins:$GIT_COMMIT"
+                }
+            }
+        }
+        stage('Update Deployment') {
+            steps {
+                sshagent(['ssh-key']) {
+                    sh 'ssh-keyscan github.com >> ~/.ssh/known_hosts'
+                    sh 'git config --global user.email "jenkins@jenkins.com"'
+                    sh 'git config --global user.name "Jenkins Deploy"'
+                    sh 'git remote set-url origin git@github.com:matheusjustino/nestjs-with-jenkins.git'
+                    sh 'git fetch'
+                    sh 'git checkout main'
+                    sh 'git pull'
+                    sh 'sed -i "s|image: .*|image: matheusjustino/nestjs-with-jenkins:$GIT_COMMIT|" deployment.yml'
+                    sh 'git add deployment.yml'
+                    sh "git commit -m 'Updating api docker image version to $GIT_COMMIT'"
+                    sh 'git push origin main'
+                }
+            }
+        }
+    }
+}
