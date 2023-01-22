@@ -9,6 +9,10 @@ de uma esteira de CI/CD.
 ## Informações
 
 - O `jenkinsfile` utilizado está disponível na raíz do projeto.
+- O arquivo `ci-example.yml` pode ser utilizado em seu projeto de desenvolvimento
+  para automatizar a execução da esteira do Jenkins. Dessa forma sempre que
+  finalizar sua codificação e enviar para a branch main o trigger do CI
+  irá inicializar de forma automática a esteira no Jenkins.
 
 ## Resumo
 
